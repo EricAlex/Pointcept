@@ -29,12 +29,11 @@ class ImotionDataset(DefaultDataset):
         loop=1,
         ignore_index=-1,
     ):
-        self.string_to_add = "/lidarTop"
+        self.string_to_add = "lidarTop"
         self.data_root = data_root
         self.sweeps = sweeps
         self.ignore_index = ignore_index
         self.learning_map = self.get_learning_map(ignore_index)
-        self.split = self.get_split_list()
         super().__init__(
             split=split,
             data_root=data_root,
@@ -44,21 +43,20 @@ class ImotionDataset(DefaultDataset):
             loop=loop,
         )
 
-    def get_split_list(self):
-        if isinstance(self.data_root, str):
-            split_list = [f for f in glob.iglob(os.path.join(self.data_root, "*")) if os.path.isdir(f)]
-        return [item + self.string_to_add for item in split_list]
-
     def get_data_list(self):
         if isinstance(self.data_root, str):
-            split_list = [f for f in glob.iglob(os.path.join(self.data_root, "*")) if os.path.isdir(f)]
-        split_list = [item + self.string_to_add for item in split_list]
-        if isinstance(split_list, str):
-            data_list = glob.glob(os.path.join(self.data_root, self.split, "*.pcd"))
-        elif isinstance(split_list, Sequence):
+            scene_paths = glob.glob(os.path.join(self.data_root, "scene*"))
+            scene_names = [os.path.basename(path) for path in scene_paths if os.path.isdir(path)]
+            scene_names = sorted(scene_names, key=lambda x: int(x.replace("scene", "")))
+        split_list = [os.path.join(scene, self.string_to_add) for scene in scene_names]
+        pc_extension = ".pcd"
+        if isinstance(split_list, Sequence):
             data_list = []
             for split in split_list:
-                data_list += glob.glob(os.path.join(self.data_root, split, "*.pcd"))
+                this_dir = os.path.join(self.data_root, split)
+                pcd_names = [f for f in os.listdir(this_dir) if f.endswith(pc_extension)]
+                pcd_names.sort()
+                data_list += [os.path.join(this_dir, name) for name in pcd_names]
         else:
             raise NotImplementedError
         return data_list
