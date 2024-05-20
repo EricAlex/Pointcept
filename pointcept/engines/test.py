@@ -203,11 +203,12 @@ class SemSegTester(TesterBase):
                         )
                     )
                 pred = pred.max(1)[1].data.cpu().numpy()
-                np.save(pred_save_path, pred)
+                # np.save(pred_save_path, pred)
             if "origin_segment" in data_dict.keys():
                 assert "inverse" in data_dict.keys()
                 pred = pred[data_dict["inverse"]]
                 segment = data_dict["origin_segment"]
+            np.save(pred_save_path, pred)
             intersection, union, target = intersection_and_union(
                 pred, segment, self.cfg.data.num_classes, self.cfg.data.ignore_index
             )
