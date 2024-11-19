@@ -4,6 +4,8 @@ project(imo_pcd_reader)
 
 set(CMAKE_BUILD_TYPE Release)
 
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp")
+
 # Find PCL
 find_package(PCL 1.10 REQUIRED)
 include_directories(${PCL_INCLUDE_DIRS})

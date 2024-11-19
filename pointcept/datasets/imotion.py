@@ -6,6 +6,7 @@ Please cite our work if the code is helpful to you.
 """
 
 import os
+import random
 import numpy as np
 from collections.abc import Sequence
 import glob
@@ -29,11 +30,13 @@ class ImotionDataset(DefaultDataset):
         loop=1,
         ignore_index=-1,
     ):
-        self.string_to_add = "lidarTop"
+        self.glob_str = "*scene*"
+        self.string_to_add = "lidarFusion_pcd"
+        self.pc_extension = ".pcd"
         self.data_root = data_root
         self.sweeps = sweeps
         self.ignore_index = ignore_index
-        self.learning_map = self.get_learning_map(ignore_index)
+        # self.learning_map = self.get_learning_map(ignore_index)
         super().__init__(
             split=split,
             data_root=data_root,
@@ -44,70 +47,99 @@ class ImotionDataset(DefaultDataset):
         )
 
     def get_data_list(self):
-        if isinstance(self.data_root, str):
-            scene_paths = glob.glob(os.path.join(self.data_root, "scene*"))
-            scene_names = [os.path.basename(path) for path in scene_paths if os.path.isdir(path)]
-            scene_names = sorted(scene_names, key=lambda x: int(x.replace("scene", "")))
-        split_list = [os.path.join(scene, self.string_to_add) for scene in scene_names]
-        pc_extension = ".pcd"
-        if isinstance(split_list, Sequence):
+        if self.test_mode:
+            if isinstance(self.data_root, str):
+                scene_paths = glob.glob(os.path.join(self.data_root, self.glob_str))
+                scene_names = [os.path.basename(path) for path in scene_paths if os.path.isdir(path)]
+            split_list = [os.path.join(scene, self.string_to_add) for scene in scene_names]
             data_list = []
-            for split in split_list:
-                this_dir = os.path.join(self.data_root, split)
-                pcd_names = [f for f in os.listdir(this_dir) if f.endswith(pc_extension)]
+            if not split_list:
+                this_dir = os.path.join(self.data_root, self.string_to_add)
+                pcd_names = [f for f in os.listdir(this_dir) if f.endswith(self.pc_extension)]
                 pcd_names.sort()
-                data_list += [os.path.join(this_dir, name) for name in pcd_names]
+                data_list = [os.path.join(this_dir, name) for name in pcd_names]
+            elif isinstance(split_list, Sequence):
+                for split in split_list:
+                    this_dir = os.path.join(self.data_root, split)
+                    pcd_names = [f for f in os.listdir(this_dir) if f.endswith(self.pc_extension)]
+                    pcd_names.sort()
+                    data_list += [os.path.join(this_dir, name) for name in pcd_names]
+            else:
+                raise NotImplementedError
+            return data_list
         else:
-            raise NotImplementedError
-        return data_list
+            pcd_names = [f for f in os.listdir(self.data_root) if f.endswith(self.pc_extension)]
+            data_list = [os.path.join(self.data_root, name) for name in pcd_names]
+            random.shuffle(data_list)
+            proportions = [0.70, 0.15, 0.15]
+            split_points = [int(sum(proportions[:i]) * len(data_list)) for i in range(1, len(proportions))]
+            data_splits = [data_list[i:j] for i, j in zip([0] + split_points, split_points + [len(data_list)])]
+            split_dict = {"train": data_splits[0], "val": data_splits[1], "test": data_splits[2]}
+            if isinstance(self.split, str):
+                split_data_list = split_dict[self.split]
+            elif isinstance(self.split, Sequence):
+                split_data_list = []
+                for s in self.split:
+                    split_data_list.extend(split_dict[self.split])
+            else:
+                raise NotImplementedError
+            return split_data_list
 
     def get_data(self, idx):
-        # Read the PCD file
-        scan = imo_pcd_reader.read_pcd(self.data_list[idx % len(self.data_list)])
-        coord = scan[:, :3]
-        strength = scan[:, -1].reshape([-1, 1]) / 255
-        segment = np.ones((scan.shape[0],), dtype=np.int64) * self.ignore_index
-        data_dict = dict(coord=coord, strength=strength, segment=segment)
-        return data_dict
+        if self.test_mode:
+            # Read the PCD file
+            scan = imo_pcd_reader.read_pcd(self.data_list[idx % len(self.data_list)])
+            coord = scan[:, :3]
+            strength = scan[:, -1].reshape([-1, 1]) / 255
+            segment = np.ones((scan.shape[0],), dtype=np.int64) * self.ignore_index
+            data_dict = dict(coord=coord, strength=strength, segment=segment)
+            return data_dict
+        else:
+            scan = imo_pcd_reader.read_AL_pcd(self.data_list[idx % len(self.data_list)])
+            coord = scan[:, :3]
+            strength = scan[:, 3].reshape([-1, 1]) / 255
+            segment = scan[:, -1].astype(np.int64)
+            data_dict = dict(coord=coord, strength=strength, segment=segment)
+            return data_dict
 
     def get_data_name(self, idx):
         file_name, extension = os.path.splitext(os.path.basename(self.data_list[idx % len(self.data_list)]))
         return file_name
     
-    @staticmethod
-    def get_learning_map(ignore_index):
-        learning_map = {
-            0: ignore_index,
-            1: ignore_index,
-            2: 6,
-            3: 6,
-            4: 6,
-            5: ignore_index,
-            6: 6,
-            7: ignore_index,
-            8: ignore_index,
-            9: 0,
-            10: ignore_index,
-            11: ignore_index,
-            12: 7,
-            13: ignore_index,
-            14: 1,
-            15: 2,
-            16: 2,
-            17: 3,
-            18: 4,
-            19: ignore_index,
-            20: ignore_index,
-            21: 5,
-            22: 8,
-            23: 9,
-            24: 10,
-            25: 11,
-            26: 12,
-            27: 13,
-            28: 14,
-            29: ignore_index,
-            30: 15,
-            31: ignore_index,
-        }
-        return learning_map
+    # @staticmethod
+    # def get_learning_map(ignore_index):
+    #     learning_map = {
+    #         0: ignore_index,
+    #         1: ignore_index,
+    #         2: 6,
+    #         3: 6,
+    #         4: 6,
+    #         5: ignore_index,
+    #         6: 6,
+    #         7: ignore_index,
+    #         8: ignore_index,
+    #         9: 0,
+    #         10: ignore_index,
+    #         11: ignore_index,
+    #         12: 7,
+    #         13: ignore_index,
+    #         14: 1,
+    #         15: 2,
+    #         16: 2,
+    #         17: 3,
+    #         18: 4,
+    #         19: ignore_index,
+    #         20: ignore_index,
+    #         21: 5,
+    #         22: 8,
+    #         23: 9,
+    #         24: 10,
+    #         25: 11,
+    #         26: 12,
+    #         27: 13,
+    #         28: 14,
+    #         29: ignore_index,
+    #         30: 15,
+    #         31: ignore_index,
+    #     }
+    #     return learning_map
